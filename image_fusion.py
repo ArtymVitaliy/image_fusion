@@ -4,6 +4,8 @@ from PIL import Image, ImageTk, ImageChops, ImageEnhance
 import numpy as np
 import cv2
 import pywt
+from skimage.metrics import structural_similarity as ssim
+from scipy.stats import entropy
 
 class ImageMergerApp:
     def __init__(self, root):
@@ -90,6 +92,26 @@ class ImageMergerApp:
         # Кнопка для злиття зображень
         tk.Button(controls_frame, text="Об'єднати зображення", command=self.merge_images).grid(row=4, column=0, padx=5, pady=20)
 
+        # Додаємо фрейм для відображення метрик якості
+        self.metrics_frame = tk.LabelFrame(controls_frame, text="Метрики якості", padx=5, pady=5)
+        self.metrics_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+        
+        # Створюємо мітки для відображення метрик
+        self.mse_label = tk.Label(self.metrics_frame, text="MSE: -")
+        self.mse_label.pack(anchor="w")
+        
+        self.psnr_label = tk.Label(self.metrics_frame, text="PSNR: -")
+        self.psnr_label.pack(anchor="w")
+        
+        self.ssim_label = tk.Label(self.metrics_frame, text="SSIM: -")
+        self.ssim_label.pack(anchor="w")
+        
+        self.entropy_label = tk.Label(self.metrics_frame, text="Ентропія: -")
+        self.entropy_label.pack(anchor="w")
+        
+        self.std_label = tk.Label(self.metrics_frame, text="Стд. відхилення: -")
+        self.std_label.pack(anchor="w")
+
     def on_method_change(self, event):
         method = self.method_var.get()
         if method == "Зважене додавання":
@@ -144,6 +166,45 @@ class ImageMergerApp:
                 messagebox.showinfo("Успіх", "Результат успішно збережено")
             except Exception as e:
                 messagebox.showerror("Помилка", f"Помилка при збереженні: {str(e)}")
+
+    def calculate_metrics(self, merged_array):
+        """Обчислення метрик якості комплексування"""
+        # Конвертуємо зображення в масиви
+        img1_array = cv2.cvtColor(np.array(self.image1), cv2.COLOR_RGB2GRAY)
+        img2_array = cv2.cvtColor(np.array(self.image2), cv2.COLOR_RGB2GRAY)
+        if len(merged_array.shape) == 3:
+            merged_gray = cv2.cvtColor(merged_array, cv2.COLOR_RGB2GRAY)
+        else:
+            merged_gray = merged_array
+            
+        # MSE
+        mse1 = np.mean((merged_gray - img1_array) ** 2)
+        mse2 = np.mean((merged_gray - img2_array) ** 2)
+        mse = (mse1 + mse2) / 2
+        
+        # PSNR
+        if mse == 0:
+            psnr = float('inf')
+        else:
+            psnr = 20 * np.log10(255.0 / np.sqrt(mse))
+        
+        # SSIM
+        ssim1 = ssim(merged_gray, img1_array)
+        ssim2 = ssim(merged_gray, img2_array)
+        ssim_value = (ssim1 + ssim2) / 2
+        
+        # Ентропія
+        entropy_value = entropy(merged_gray.flatten())
+        
+        # Стандартне відхилення
+        std_value = np.std(merged_gray)
+        
+        # Оновлюємо мітки з результатами
+        self.mse_label.config(text=f"MSE: {mse:.2f}")
+        self.psnr_label.config(text=f"PSNR: {psnr:.2f} dB")
+        self.ssim_label.config(text=f"SSIM: {ssim_value:.3f}")
+        self.entropy_label.config(text=f"Ентропія: {entropy_value:.2f}")
+        self.std_label.config(text=f"Стд. відхилення: {std_value:.2f}")
 
     def merge_images(self):
         if self.image1 and self.image2:
@@ -312,6 +373,8 @@ class ImageMergerApp:
                     self.merged_image = Image.fromarray(np.uint8(merged_array))
 
                 self.display_image(self.merged_image, self.result_canvas)
+                # Додаємо обчислення метрик після злиття
+                self.calculate_metrics(np.array(self.merged_image))
             
             except Exception as e:
                 messagebox.showerror("Помилка", f"Виникла помилка при злитті зображень: {str(e)}")
